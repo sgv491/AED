@@ -78,7 +78,7 @@ def variance(
     K=x.shape[1]
 
     if transform in ('', 're', 'fd'):
-          sigma = None # Fill in
+          sigma = SSR / (x.shape[0] - K)  # Regular OLS and RE: n*t observations minus K coefficients
     elif transform.lower() == 'fe':
           sigma = SSR / ((N * (T - 1)) - K)
     elif transform.lower() in ('be'): 
