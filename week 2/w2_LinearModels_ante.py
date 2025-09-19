@@ -98,13 +98,13 @@ def print_table(labels: tuple, results: dict, headers=None, title="Results", **k
     
     Args:
       labels (tuple): The `labels` parameter is a tuple that contains the labels for the dependent
-    variable and the independent variables. The first element of the tuple is the label for the
+    variable and the independent variables. The -rst element of the tuple is the label for the
     dependent variable, and the remaining elements are the labels for the independent variables.
       results (dict): The `results` parameter is a dictionary that comes from the `estimate` function.
       headers: The `headers` parameter is a list that specifies the column headers for the table. By
     default, it is set to `["", "Beta", "Se", "t-values"]`.
       title: The title of the table, which is "Results" by default. Defaults to Results
-    """
+    """ 
 
     # Unpack labels
     label_y, label_x = labels
