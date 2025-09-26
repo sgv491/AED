@@ -1,4 +1,6 @@
 import numpy as np
+import scipy.stats as st
+import pandas as pd
 from numpy import linalg as la
 from tabulate import tabulate
 
@@ -236,8 +238,6 @@ def perm( Q_T: np.ndarray, A: np.ndarray) -> np.ndarray:
 
     return Z
 
-import numpy as np
-import pandas as pd
 
 def load_firm_data():
     # Load the CSV file
@@ -262,4 +262,5 @@ def load_firm_data():
     label_x = ["Constant", "Capital", "Labor"]
 
     return y, x, T, dat["year"].values, label_y, label_x
+
 
