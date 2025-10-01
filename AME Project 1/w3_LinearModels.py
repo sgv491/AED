@@ -264,3 +264,105 @@ def load_firm_data():
     return y, x, T, dat["year"].values, label_y, label_x
 
 
+import numpy as np
+from scipy.stats import t as tdist
+
+def fd_exogeneity_lead_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_zeros=True):
+    """
+    FD lead-variable exogeneity test:
+        Δy_it = b1 ΔK_it + b2 ΔL_it + b3 ΔL_{i,t+1} + Δu_it
+
+    If logs=True:
+        Δlog y_it = b1 Δlog K_it + b2 Δlog L_it + b3 Δlog L_{i,t+1} + Δu_it
+
+    Parameters
+    ----------
+    y : array, (N*T, 1)
+    x : array, (N*T, K)
+    N : int, number of panels (firms)
+    T : int, number of periods
+    cap_col : int, column index for capital
+    emp_col : int, column index for employment
+    logs : bool, if True takes logs before differencing
+    drop_zeros : bool, if True drops firms with non-positive values before log transform
+
+    Prints
+    ------
+    Coefficients, SEs, t-stats, and decision on H0: b3 = 0.
+    """
+
+    K = x.shape[1]
+    x3 = x.reshape(N, T, K)
+    y2 = y.reshape(N, T, 1)
+
+    # Handle logs
+    if logs:
+        if drop_zeros:
+            # Drop firms with any non-positive values
+            valid_firms = np.all(x3[:,:,cap_col] > 0, axis=1) \
+                        & np.all(x3[:,:,emp_col] > 0, axis=1) \
+                        & np.all(y2[:,:,0] > 0, axis=1)
+            x3 = x3[valid_firms]
+            y2 = y2[valid_firms]
+            N = x3.shape[0]
+        x3 = np.log(x3)
+        y2 = np.log(y2)
+
+    # First differences
+    dx = np.diff(x3, axis=1)
+    dy = np.diff(y2, axis=1)
+
+    dcap, demp = dx[:, :, cap_col], dx[:, :, emp_col]
+
+    # Align with lead
+    demp_lead = demp[:, 1:]
+    demp_cur  = demp[:, :-1]
+    dcap_cur  = dcap[:, :-1]
+    dy_cur    = dy[:, :-1, 0]
+
+    # Stack
+    Y = dy_cur.reshape(-1, 1)
+    X = np.c_[np.ones(Y.shape[0]), dcap_cur.ravel(), demp_cur.ravel(), demp_lead.ravel()]
+
+    # OLS
+    XtX = X.T @ X
+    beta = np.linalg.solve(XtX, X.T @ Y)
+    u = Y - X @ beta
+
+    # Cluster-robust SEs (by firm)
+    P = X.shape[1]
+    meat = np.zeros((P, P))
+    rows_per_i = demp_cur.shape[1]
+    for i in range(N):
+        sl = slice(i*rows_per_i, (i+1)*rows_per_i)
+        Xi, ui = X[sl, :], u[sl, :]
+        meat += Xi.T @ (ui @ ui.T) @ Xi
+    V = np.linalg.inv(XtX) @ meat @ np.linalg.inv(XtX)
+    se = np.sqrt(np.diag(V)).reshape(-1,1)
+    tvals = (beta / se).flatten()
+
+    # Names
+    names = ["const", "ΔCapital", "ΔEmployment", "Lead ΔEmployment"]
+    if logs:
+        names = ["const", "Δlog Capital", "Δlog Employment", "Lead Δlog Employment"]
+
+    # Print results
+    print("FD Exogeneity Test (lead-variable)")
+    if logs:
+        print("Model: Δ log y_it = b1 Δ log K_it + b2 Δ log L_it + b3 Δ log L_{i,t+1} + Δu_it\n")
+    else:
+        print("Model: Δ y_it = b1 Δ K_it + b2 Δ L_it + b3 Δ L_{i,t+1} + Δu_it\n")
+
+    print("{:>22}  {:>10}  {:>10}  {:>8}".format("Variable","Beta","SE","t"))
+    for nm, b, s, t in zip(names, beta.flatten(), se.flatten(), tvals):
+        print(f"{nm:>22}  {float(b):10.4f}  {float(s):10.4f}  {float(t):8.2f}")
+
+    # Test lead coefficient
+    b3, se3, t3 = float(beta[-1,0]), float(se[-1,0]), float(tvals[-1])
+    df = max(N - 1, 1)
+    p3 = float(2*(1 - tdist.cdf(abs(t3), df)))
+    print(f"\nTest H0: b3 (Lead term) = 0 → t={t3:.2f}, p={p3:.4g} (df clustered={df})")
+    if p3 < 0.05:
+        print("→ Reject exogeneity in FD (lead significant).")
+    else:
+        print("→ Do NOT reject exogeneity in FD.")
