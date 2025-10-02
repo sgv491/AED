@@ -2,6 +2,7 @@ import numpy as np
 from numpy import linalg as la
 from tabulate import tabulate
 import pandas as pd
+from scipy.stats import t as tdist
 
 
 def estimate( 
@@ -250,18 +251,92 @@ def load_example_data():
     unique_id = np.unique(id_array, return_counts=True)
     T = int(unique_id[1].mean())
 
-    # Dependent variable (example: 'lcap')
-    y = df['lcap'].values.reshape(-1, 1)
+    # Dependent variable: log output (deflated sales)
+    y = df['ldsa'].values.reshape(-1, 1)
 
-    # Independent variables: constant, 'lemp', 'ldsa'
+    # Independent variables: constant, log labour, log capital
     x = np.column_stack([
         np.ones(y.shape[0]),
         df['lemp'].values,
-        df['ldsa'].values
+        df['lcap'].values
     ])
 
-    # Variable names
-    label_y = 'lcap'
-    label_x = ['Constant', 'lemp', 'ldsa']
+    # Variable names (ordered to match the handout tables)
+    label_y = 'Log deflated sales'
+    label_x = ['Constant', 'Log labour', 'Log capital']
 
     return y, x, T, year, label_y, label_x
+
+
+def fd_exogeneity_lead_test(y, x, N, T, cap_col=2, emp_col=1, logs=False, drop_zeros=True):
+    """FD lead-variable exogeneity test mirroring the assignment helper."""
+
+    K = x.shape[1]
+    x3 = x.reshape(N, T, K)
+    y2 = y.reshape(N, T, 1)
+
+    if logs:
+        if drop_zeros:
+            valid_firms = (
+                np.all(x3[:, :, cap_col] > 0, axis=1)
+                & np.all(x3[:, :, emp_col] > 0, axis=1)
+                & np.all(y2[:, :, 0] > 0, axis=1)
+            )
+            x3 = x3[valid_firms]
+            y2 = y2[valid_firms]
+            N = x3.shape[0]
+        x3 = np.log(x3)
+        y2 = np.log(y2)
+
+    dx = np.diff(x3, axis=1)
+    dy = np.diff(y2, axis=1)
+
+    dcap = dx[:, :, cap_col]
+    demp = dx[:, :, emp_col]
+
+    demp_lead = demp[:, 1:]
+    demp_cur = demp[:, :-1]
+    dcap_cur = dcap[:, :-1]
+    dy_cur = dy[:, :-1, 0]
+
+    Y = dy_cur.reshape(-1, 1)
+    X = np.c_[np.ones(Y.shape[0]), dcap_cur.ravel(), demp_cur.ravel(), demp_lead.ravel()]
+
+    XtX = X.T @ X
+    beta = la.solve(XtX, X.T @ Y)
+    u = Y - X @ beta
+
+    P = X.shape[1]
+    meat = np.zeros((P, P))
+    rows_per_i = demp_cur.shape[1]
+    for i in range(N):
+        sl = slice(i * rows_per_i, (i + 1) * rows_per_i)
+        Xi, ui = X[sl, :], u[sl, :]
+        meat += Xi.T @ (ui @ ui.T) @ Xi
+
+    V = la.inv(XtX) @ meat @ la.inv(XtX)
+    se = np.sqrt(np.diag(V)).reshape(-1, 1)
+    tvals = (beta / se).flatten()
+
+    names = ['const', 'Delta capital', 'Delta labour', 'Lead Delta labour']
+    if logs:
+        names = ['const', 'Delta log capital', 'Delta log labour', 'Lead Delta log labour']
+
+    print('FD Exogeneity Test (lead variable)')
+    if logs:
+        print('Model: Delta log y_it = b1 Delta log K_it + b2 Delta log L_it + b3 Delta log L_{i,t+1} + Delta u_it\n')
+    else:
+        print('Model: Delta y_it = b1 Delta K_it + b2 Delta L_it + b3 Delta L_{i,t+1} + Delta u_it\n')
+
+    print(f"{'Variable':>22}  {'Beta':>10}  {'SE':>10}  {'t':>8}")
+    for nm, b, s, t in zip(names, beta.flatten(), se.flatten(), tvals):
+        print(f"{nm:>22}  {float(b):10.4f}  {float(s):10.4f}  {float(t):8.2f}")
+
+    t_lead = float(tvals[-1])
+    df = max(N - 1, 1)
+    p_lead = float(2 * (1 - tdist.cdf(abs(t_lead), df)))
+    print(f"\nTest H0: Lead term = 0 -> t = {t_lead:.2f}, p = {p_lead:.4f} (cluster df = {df})")
+    if p_lead < 0.05:
+        print('-> Reject H0: lead term differs from zero (sequential exogeneity fails).')
+    else:
+        print('-> Do NOT reject H0: no evidence against sequential exogeneity.')
