@@ -268,7 +268,7 @@ def load_example_data():
     return y, x, T, year, label_y, label_x
 
 
-def fd_exogeneity_lead_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_zeros=True):
+def fd_exogeneity_lead_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_zeros=True, return_full=False):
     """
     FD lead-variable exogeneity test:
         Δy_it = b1 ΔK_it + b2 ΔL_it + b3 ΔL_{i,t+1} + Δu_it
@@ -367,3 +367,15 @@ def fd_exogeneity_lead_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_z
         print("→ Reject exogeneity in FD (lead significant).")
     else:
         print("→ Do NOT reject exogeneity in FD.")
+
+    results = {
+        'beta': beta,
+        'cov': V,
+        'se': se,
+        't': tvals,
+        'names': names,
+        'N_effective': N,
+        'df_cluster': max(N - 1, 1)
+    }
+    if return_full:
+        return results
