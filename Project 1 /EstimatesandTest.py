@@ -2,7 +2,7 @@ import numpy as np
 from numpy import linalg as la
 from tabulate import tabulate
 import pandas as pd
-from scipy.stats import t as tdist
+from scipy.stats import t as tdist, chi2
 
 
 def estimate( 
@@ -376,6 +376,153 @@ def fd_exogeneity_lead_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_z
         'names': names,
         'N_effective': N,
         'df_cluster': max(N - 1, 1)
+    }
+    if return_full:
+        return results
+
+
+def fd_exogeneity_lead_lag_test(y, x, N, T, cap_col=1, emp_col=2, logs=False, drop_zeros=True, return_full=False):
+    """
+    FD lead-lag exogeneity test:
+        Δy_it = b1 ΔK_it + b2 ΔL_{i,t-1} + b3 ΔL_it + b4 ΔL_{i,t+1} + Δu_it
+
+    If logs=True:
+        Δlog y_it = b1 Δlog K_it + b2 Δlog L_{i,t-1} + b3 Δlog L_it + b4 Δlog L_{i,t+1} + Δu_it
+
+    Prints coefficient table and tests for both lead and lag terms.
+    """
+
+    K = x.shape[1]
+    x3 = x.reshape(N, T, K)
+    y2 = y.reshape(N, T, 1)
+
+    # Optional log transform with zero filtering as in fd_exogeneity_lead_test
+    if logs:
+        if drop_zeros:
+            valid_firms = (
+                np.all(x3[:, :, cap_col] > 0, axis=1)
+                & np.all(x3[:, :, emp_col] > 0, axis=1)
+                & np.all(y2[:, :, 0] > 0, axis=1)
+            )
+            x3 = x3[valid_firms]
+            y2 = y2[valid_firms]
+            N = x3.shape[0]
+        x3 = np.log(x3)
+        y2 = np.log(y2)
+
+    dx = np.diff(x3, axis=1)
+    dy = np.diff(y2, axis=1)
+
+    dcap, demp = dx[:, :, cap_col], dx[:, :, emp_col]
+
+    usable_periods = demp.shape[1] - 2
+    if usable_periods <= 0:
+        print("FD lead-lag test: not enough time periods after differencing (need at least 4).")
+        return None
+
+    demp_lag = demp[:, :-2]
+    demp_cur = demp[:, 1:-1]
+    demp_lead = demp[:, 2:]
+    dcap_cur = dcap[:, 1:-1]
+    dy_mid = dy[:, 1:-1, 0]
+
+    Y = dy_mid.reshape(-1, 1)
+    X = np.c_[
+        np.ones(Y.shape[0]),
+        dcap_cur.ravel(),
+        demp_lag.ravel(),
+        demp_cur.ravel(),
+        demp_lead.ravel(),
+    ]
+
+    XtX = X.T @ X
+    beta = np.linalg.solve(XtX, X.T @ Y)
+    u = Y - X @ beta
+
+    P = X.shape[1]
+    meat = np.zeros((P, P))
+    rows_per_i = usable_periods
+    for i in range(N):
+        sl = slice(i * rows_per_i, (i + 1) * rows_per_i)
+        Xi, ui = X[sl, :], u[sl, :]
+        meat += Xi.T @ (ui @ ui.T) @ Xi
+    V = np.linalg.inv(XtX) @ meat @ np.linalg.inv(XtX)
+    se = np.sqrt(np.diag(V)).reshape(-1, 1)
+    tvals = (beta / se).flatten()
+
+    if logs:
+        names = [
+            "const",
+            "Δlog Capital",
+            "Lag Δlog Employment",
+            "Δlog Employment",
+            "Lead Δlog Employment",
+        ]
+    else:
+        names = [
+            "const",
+            "ΔCapital",
+            "Lag ΔEmployment",
+            "ΔEmployment",
+            "Lead ΔEmployment",
+        ]
+
+    print("FD Exogeneity Test (lead-lag)")
+    if logs:
+        print(
+            "Model: Δ log y_it = b1 Δ log K_it + b2 Δ log L_{i,t-1} + "
+            "b3 Δ log L_it + b4 Δ log L_{i,t+1} + Δu_it\n"
+        )
+    else:
+        print(
+            "Model: Δ y_it = b1 Δ K_it + b2 Δ L_{i,t-1} + "
+            "b3 Δ L_it + b4 Δ L_{i,t+1} + Δu_it\n"
+        )
+
+    print("{:>25}  {:>10}  {:>10}  {:>8}".format("Variable", "Beta", "SE", "t"))
+    for nm, b, s, t in zip(names, beta.flatten(), se.flatten(), tvals):
+        print(f"{nm:>25}  {float(b):10.4f}  {float(s):10.4f}  {float(t):8.2f}")
+
+    df = max(N - 1, 1)
+    idx_lag, idx_lead = 2, 4
+    b_lag, se_lag, t_lag = float(beta[idx_lag, 0]), float(se[idx_lag, 0]), float(tvals[idx_lag])
+    b_lead, se_lead, t_lead = float(beta[idx_lead, 0]), float(se[idx_lead, 0]), float(tvals[idx_lead])
+    p_lag = float(2 * (1 - tdist.cdf(abs(t_lag), df)))
+    p_lead = float(2 * (1 - tdist.cdf(abs(t_lead), df)))
+
+    print(
+        f"\nTest H0: b2 (Lag term) = 0 → t={t_lag:.2f}, p={p_lag:.4g} "
+        f"(df clustered={df})"
+    )
+    print(
+        f"Test H0: b4 (Lead term) = 0 → t={t_lead:.2f}, p={p_lead:.4g} "
+        f"(df clustered={df})"
+    )
+
+    R = np.zeros((2, P))
+    R[0, idx_lag] = 1.0
+    R[1, idx_lead] = 1.0
+    diff = R @ beta
+    sub_cov = R @ V @ R.T
+    wald_stat = float(diff.T @ np.linalg.inv(sub_cov) @ diff)
+    crit_val = chi2.ppf(0.95, 2)
+    p_joint = 1 - chi2.cdf(wald_stat, 2)
+
+    print(
+        f"Joint Wald H0: lag & lead terms = 0 → χ²(2) = {wald_stat:.4f}, "
+        f"crit(5%) = {crit_val:.4f}, p = {p_joint:.4g}"
+    )
+
+    results = {
+        'beta': beta,
+        'cov': V,
+        'se': se,
+        't': tvals,
+        'names': names,
+        'N_effective': N,
+        'df_cluster': df,
+        'wald_joint': wald_stat,
+        'wald_joint_p': p_joint,
     }
     if return_full:
         return results
