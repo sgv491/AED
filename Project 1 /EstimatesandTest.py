@@ -36,6 +36,7 @@ def estimate(
     assert y.shape[1] == 1, 'y must be a column vector'
     assert y.shape[0] == x.shape[0], 'y and x must have same first dimension'
     
+    n_obs = int(y.shape[0])
     b_hat = est_ols(y, x)  # Estimated coefficients
     residual = y - x@b_hat  # Calculated residuals
     SSR = residual.T@residual  # Sum of squared residuals
@@ -48,8 +49,8 @@ def estimate(
         cov, se = robust(x, residual, T)
     t_values = b_hat/se
     
-    names = ['b_hat', 'se', 'sigma2', 't_values', 'R2', 'cov']
-    results = [b_hat, se, sigma2, t_values, R2, cov]
+    names = ['b_hat', 'se', 'sigma2', 't_values', 'R2', 'cov', 'n_obs']
+    results = [b_hat, se, sigma2, t_values, R2, cov, n_obs]
     return dict(zip(names, results))
 
     
@@ -205,6 +206,9 @@ def print_table(
     # Print extra statistics of the model.
     print(f"R\u00b2 = {results.get('R2').item():.3f}")
     print(f"\u03C3\u00b2 = {results.get('sigma2').item():.3f}")
+    n_obs = results.get('n_obs')
+    if n_obs is not None:
+        print(f"Observations = {int(n_obs)}")
     if _lambda: 
         print(f'\u03bb = {_lambda.item():.3f}')
 
