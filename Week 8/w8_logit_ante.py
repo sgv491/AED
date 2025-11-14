@@ -2,7 +2,7 @@ import numpy as np
 from numpy import random
 from numpy import linalg as la
 from scipy.stats import norm
-import LinearModel as lm
+import w8_LinearModel as lm
 
 
 name = 'Logit'
@@ -10,12 +10,10 @@ name = 'Logit'
 DOCHECKS = True 
 
 def G(z): 
-    # Fill in 
-    return None
+    return 1.0 / (1.0 + np.exp(-z))
 
 def q(theta, y, x): 
-    # Fill in 
-    return None
+    return -loglikelihood(theta, y, x)
 
 def loglikelihood(theta, y, x):
 
@@ -29,25 +27,23 @@ def loglikelihood(theta, y, x):
         assert theta.ndim == 1 
         assert theta.size == K 
 
-    # Fill in 
-    Gxb = None
-    
+
+    Gxb = G(theta @ x)
+
     # 2. avoid log(0.0) errors
     Gxb = np.fmax(Gxb, 1e-8)     # truncate below at 0.00000001
     Gxb = np.fmin(Gxb, 1.-1e-8) # truncate above at 0.99999999
 
-    # Fill in 
-    ll =  None 
+    ll = np.sum(y * np.log(Gxb) + (1 - y) * np.log(1 - Gxb))
 
     return ll
 
 def starting_values(y,x): 
-    # Fill in
-    return None
+    return np.zeros(x.shape[1])
 
 def predict(theta, x): 
     # the "prediction" is the response probability, Pr(y=1|x)
-    yhat = None # Fill in 
+    yhat = G(theta, None, x)
     return yhat 
 
 def Ginv(u): 

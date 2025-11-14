@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import random
 from scipy.stats import norm
-import LinearModel as lm
+import w8_LinearModel as lm
 
 name = 'Probit'
 
@@ -10,12 +10,10 @@ name = 'Probit'
 DOCHECKS = True 
 
 def G(z): 
-    # Fill in
-    return None 
+    return norm.cdf(z)
 
 def q(theta, y, x): 
-    # Fill in 
-    return None
+    return -loglikelihood(theta, y, x)
 
 def loglikelihood(theta, y, x):
 
@@ -29,23 +27,22 @@ def loglikelihood(theta, y, x):
         assert theta.ndim == 1 
         assert theta.size == K 
 
-    Gxb = None # Fill in 
-    
+    Gxb = G(theta @ x)
+
     # we cannot take the log of 0.0
     Gxb = np.fmax(Gxb, 1e-8)    # truncate below at 0.00000001 
     Gxb = np.fmin(Gxb, 1.-1e-8) # truncate above at 0.99999999
 
-    ll = None # Fill in 
+    ll = np.sum(y * np.log(Gxb) + (1 - y) * np.log(1 - Gxb))
     return ll
 
 
 def starting_values(y,x): 
-     # Fill in
-    return None 
+     return np.zeros(x.shape[1])
 
 def predict(theta, x): 
     # the "prediction" is just Pr(y=1|x)
-    yhat = None # Fill in  
+    yhat = G(theta, None, x)
     return yhat 
 
 def Ginv(p): 
