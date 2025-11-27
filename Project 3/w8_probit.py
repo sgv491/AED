@@ -1,8 +1,6 @@
 import numpy as np
 from numpy import random
-
 from scipy.stats import norm
-import w8_LinearModel as lm
 
 name = 'Probit'
 
@@ -10,17 +8,14 @@ name = 'Probit'
 # disable to increase speed 
 DOCHECKS = True 
 
-def G(z):
-    """Standard normal CDF."""
+def G(z): 
     return norm.cdf(z)
 
 def q(theta, y, x): 
-    Gxb = G(x @ theta)
-    return y - Gxb
+    return -loglikelihood(theta, y, x)
 
 def loglikelihood(theta, y, x):
 
-    # making sure inputs are as expected 
     if DOCHECKS: 
         assert np.isin(y, [0,1]).all(), f'y must be binary: found non-binary elements.'
         assert y.ndim == 1
@@ -30,23 +25,15 @@ def loglikelihood(theta, y, x):
         assert theta.ndim == 1 
         assert theta.size == K 
 
-    Gxb = G(x @ theta)
-
+    z = x@theta
+    Gxb = G(z)
+    
     # we cannot take the log of 0.0
-    Gxb = np.fmax(Gxb, 1e-8)    # truncate below at 0.00000001 
+    Gxb = np.fmax(Gxb, 1e-8)    # truncate below at 1e-8 
     Gxb = np.fmin(Gxb, 1.-1e-8) # truncate above at 0.99999999
 
-    ll = np.sum(y * np.log(Gxb) + (1. - y) * np.log(1. - Gxb))
+    ll = (y==1)*np.log(Gxb) + (y==0)*np.log(1.0 - Gxb) 
     return ll
-
-
-def starting_values(y,x): 
-    return np.zeros(x.shape[1])
-
-def predict(theta, x): 
-    # the "prediction" is just Pr(y=1|x)
-    yhat = G(x @ theta)
-    return yhat 
 
 def Ginv(p): 
     '''Inverse cdf
@@ -56,6 +43,15 @@ def Ginv(p):
         x: N-array of values in (-inf; inf) 
     '''
     return norm.ppf(p)
+
+def starting_values(y,x): 
+    b_ols = np.linalg.solve(x.T@x, x.T@y)
+    return b_ols*2.5
+
+def predict(theta, x): 
+    # the "prediction" is just Pr(y=1|x)
+    yhat = G(x@theta) 
+    return yhat 
 
 def sim_data(theta: np.ndarray, N:int) -> tuple: 
     '''sim_data: simulate a dataset of size N with true K-parameter theta
