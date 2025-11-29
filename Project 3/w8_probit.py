@@ -11,6 +11,10 @@ DOCHECKS = True
 def G(z): 
     return norm.cdf(z)
 
+def Gprime(z):
+    """Derivative of the probit CDF (standard normal pdf)."""
+    return norm.pdf(z)
+
 def q(theta, y, x): 
     return -loglikelihood(theta, y, x)
 

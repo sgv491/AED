@@ -13,6 +13,11 @@ def G(z):
     Gz = 1. / (1. + np.exp(-z))
     return Gz
 
+def Gprime(z):
+    """Derivative of the logit CDF."""
+    gz = G(z)
+    return gz * (1.0 - gz)
+
 def q(theta, y, x): 
     return -loglikelihood(theta, y, x)
 
